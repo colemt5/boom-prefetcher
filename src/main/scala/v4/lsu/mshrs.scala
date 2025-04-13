@@ -541,9 +541,11 @@ class BoomMSHRFile(implicit edge: TLEdgeOut, p: Parameters) extends BoomModule()
   for (w <- 0 until lsuWidth)
     io.req(w).ready := false.B
 
-  val prefetcher: DataPrefetcher = if (enablePrefetching && prefetchingType == "NLPrefetcher")
+  val prefetcher: DataPrefetcher = if (enablePrefetching && prefetchingType == "NL")
                                     Module(new NLPrefetcher)
-                                  else if (enablePrefetching && prefetchingType == "IndirectPrefetcher")
+                                  else if (enablePrefetching && prefetchingType == "Stride")
+                                    Module(new StridePrefetcher)
+                                  else if (enablePrefetching && prefetchingType == "Indirect")
                                     Module(new IndirectPrefetcher)
                                   else
                                     Module(new NullPrefetcher)

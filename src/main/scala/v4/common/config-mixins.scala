@@ -93,7 +93,7 @@ class WithRationalBoomTiles extends Config((site, here, up) => {
 /**
  * Custom 1-wide BOOM for prefetch testing
  */
-class WithNSmallBoomsPrefetch(n: Int = 1) extends Config(
+class WithNSmallBoomsPrefetch(n: Int = 1, prefetchingType: String = "NL") extends Config(
   new WithTAGELBPD ++ // Default to TAGE-L BPD
   new Config((site, here, up) => {
     case TilesLocated(InSubsystem) => {
@@ -121,7 +121,7 @@ class WithNSmallBoomsPrefetch(n: Int = 1) extends Config(
               maxBrCount = 8,
               numFetchBufferEntries = 8,
               enablePrefetching = true,
-              prefetchingType = "IndirectPrefetcher",
+              prefetchingType = prefetchingType,
               ftq = FtqParameters(nEntries=16),
               nPerfCounters = 2,
               fpu = Some(freechips.rocketchip.tile.FPUParams(sfmaLatency=4, dfmaLatency=4, divSqrt=true))

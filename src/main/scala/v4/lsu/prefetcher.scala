@@ -73,6 +73,26 @@ class NLPrefetcher(implicit edge: TLEdgeOut, p: Parameters) extends DataPrefetch
   io.prefetch.bits.data        := DontCare
   io.prefetch.bits.is_hella    := false.B
 
+/**
+  * Stride prefetcher. Grabs the next line on a cache miss
+  */
+class StridePrefetcher(implicit edge: TLEdgeOut, p: Parameters) extends DataPrefetcher
+{
+
+  io.prefetch.valid := false.B
+  io.prefetch.bits  := DontCare
+}
+
+/**
+  * Indirect prefetcher. Grabs the next line on a cache miss
+  */
+class IndirectPrefetcher(implicit edge: TLEdgeOut, p: Parameters) extends DataPrefetcher
+{
+
+  io.prefetch.valid := false.B
+  io.prefetch.bits  := DontCare
+}
+
 }
 
 
