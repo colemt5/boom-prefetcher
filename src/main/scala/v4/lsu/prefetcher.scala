@@ -26,8 +26,8 @@ abstract class DataPrefetcher(implicit edge: TLEdgeOut, p: Parameters) extends B
   val io = IO(new Bundle {
     val mshr_avail = Input(Bool())
     val req_val    = Input(Bool())
-    val req_paddr   = Input(UInt(coreMaxAddrBits.W))
-    val req_vaddr   = Input(UInt(coreMaxAddrBits.W))
+    val req_paddr  = Input(UInt(coreMaxAddrBits.W))
+    val req_vaddr  = Input(UInt(coreMaxAddrBits.W))
     val req_coh    = Input(new ClientMetadata)
 
     val prefetch   = Decoupled(new BoomDCacheReq)
@@ -50,8 +50,8 @@ class NLPrefetcher(implicit edge: TLEdgeOut, p: Parameters) extends DataPrefetch
 {
 
   val req_valid = RegInit(false.B)
-  val req_paddr  = Reg(UInt(coreMaxAddrBits.W))
-  val req_vaddr  = Reg(UInt(coreMaxAddrBits.W))  
+  val req_paddr = Reg(UInt(coreMaxAddrBits.W))
+  val req_vaddr = Reg(UInt(coreMaxAddrBits.W))  
   val req_cmd   = Reg(UInt(M_SZ.W))
 
   val mshr_req_paddr = io.req_paddr + cacheBlockBytes.U
@@ -75,73 +75,60 @@ class NLPrefetcher(implicit edge: TLEdgeOut, p: Parameters) extends DataPrefetch
 }
 
 /**
-  * Stride prefetcher. Grabs the next line on a cache miss
+  * Stride prefetcher. Prefetches based on the last stride and current stride
+  * @param sbSize Size of the stride buffer 
   */
-class StridePrefetcher(implicit edge: TLEdgeOut, p: Parameters) extends DataPrefetcher
+class StridePrefetcher(implicit edge: TLEdgeOut, p: Parameters, sbSize: Int = 4) extends DataPrefetcher
 {
+  // parameter checks
+  require(isPow2(sbSize), s"Parameter sbSize must be a power of 2, but got $sbSize")
+  require(sbSize > 0, s"Parameter sbSize must be greater than 0, but got $sbSize")
+  require(sbSize <= 16, s"Parameter sbSize must be less than or equal to 16, but got $sbSize")
 
   val req_valid = RegInit(false.B)
-  val req_paddr  = Reg(UInt(coreMaxAddrBits.W))
-  val req_vaddr  = Reg(UInt(coreMaxAddrBits.W))  
+  val req_paddr = Reg(UInt(coreMaxAddrBits.W))
+  val req_vaddr = Reg(UInt(coreMaxAddrBits.W))
   val req_cmd   = Reg(UInt(M_SZ.W))
 
-  val last_addr = RegInit(VecInit(Seq.fill(4)(0.U(coreMaxAddrBits.W))))
-  val stride = Reg(Vec(4, SInt(16.W)))
-  val confidence = RegInit(VecInit(Seq.fill(4)(false.B)))
-  
-  val hit_sel = Wire(UInt(3.W))
-  val miss_sel = Wire(UInt(3.W))
+  // Prefetcher state
+  val paddr_buffer  = RegInit(VecInit(Seq.fill(sbSize)(0.U(coreMaxAddrBits.W))))
+  val stride_buffer = Reg(Vec(sbSize, SInt(16.W)))
+  val valid_stride  = RegInit(VecInit(Seq.fill(sbSize)(false.B)))
 
-  // create a random two bit in case of stride conflict
-  val rand = Cat(io.req_paddr(8) ^ io.req_paddr(4), io.req_paddr(9) ^ io.req_paddr(5))
+  // calculate prefetch addresses and strides for all possible last addresses
+  // todo should the number of adders be optimized? maybe assume stride is only a few bytes
+  val mshr_req_paddr = VecInit(Seq.tabulate(sbSize)(i => ((io.req_paddr.asSInt + stride_buffer(i)).asUInt)))
+  val mshr_req_stride = VecInit(Seq.tabulate(sbSize)(i => (io.req_paddr - paddr_buffer(i)).asSInt))
 
-  // calculate current stride for all possible last addresses
-  val curr_stride = VecInit(Seq.tabulate(4)(i => (io.req_paddr - last_addr(i)).asSInt))
+  // check if the current stride matches any valid strides in the buffer
+  // set msb of hit_sel to 1 if there are no matches 
+  val hit_seq = (0 until sbSize).map {i => (valid_stride(i) && (mshr_req_stride(i) === stride_buffer(i))) -> i.U}
+  val hit_sel = PriorityMux(hit_seq :+ (true.B, (sbSize + 1).U))
 
-  // calculate prefetch address for all possible last addresses
-  val mshr_req_paddr = VecInit(Seq.tabulate(4)(i => ((last_addr(i).asSInt + stride(i)).asUInt)))
+  // check if there are any free slots in the stride buffer
+  // set msb of miss_sel to 1 if there are no free slots
+  val miss_seq = (0 until sbSize).map {i => (~valid_stride(i)) -> i.U}
+  val miss_sel = PriorityMux(miss_seq :+ (true.B, (sbSize + 1).U))
 
-  when (curr_stride(0) === stride(0)) {
-    hit_sel := 0.U
-  } .elsewhen (curr_stride(1) === stride(1)) {
-    hit_sel := 1.U
-  } .elsewhen (curr_stride(2) === stride(2)) {
-    hit_sel := 2.U
-  } .elsewhen (curr_stride(3) === stride(3)) {
-    hit_sel := 3.U
-  } .otherwise {
-    hit_sel := 5.U
-  }
+  // create random select in case of stride conflict
+  val rand_sel = Cat(Seq.tabulate(log2Ceil(sbSize))(i => io.req_paddr(4+i) ^ io.req_paddr(8+i))).asUInt 
+  // val rand_sel = Cat(io.req_paddr(8) ^ io.req_paddr(4), io.req_paddr(9) ^ io.req_paddr(5))
 
-  when (confidence(0)) {
-    miss_sel := 0.U
-  } .elsewhen (confidence(1)) {
-    miss_sel := 1.U
-  } .elsewhen (confidence(2)) {
-    miss_sel := 2.U
-  } .elsewhen (confidence(3)) {
-    miss_sel := 3.U
-  } .otherwise {
-    miss_sel := 5.U
-  }
-
-  val cacheable = VecInit(Seq.tabulate(4)(i => edge.manager.supportsAcquireBSafe(mshr_req_paddr(i), lgCacheBlockBytes.U)))
+  val cacheable = VecInit(Seq.tabulate(sbSize)(i => edge.manager.supportsAcquireBSafe(mshr_req_paddr(i), lgCacheBlockBytes.U)))
 
   when (io.req_val) {
-    when (~hit_sel(2) && confidence(hit_sel(1, 0))) {
+    when (~hit_sel(hit_sel.getWidth - 1)) { // hit
       req_valid := cacheable(hit_sel)
-      req_paddr := (io.req_paddr.asSInt + stride(hit_sel)).asUInt
-      req_vaddr := io.req_vaddr
+      req_paddr := mshr_req_paddr(hit_sel)
       req_cmd   := Mux(ClientStates.hasWritePermission(io.req_coh.state), M_PFW, M_PFR)
-      last_addr(hit_sel) := io.req_paddr
-    } .elsewhen (~miss_sel(2)) {
-      stride(miss_sel) := curr_stride(miss_sel)
-      last_addr(miss_sel) := io.req_paddr
-      confidence(miss_sel) := 1.U
-    } .otherwise {
-      stride(rand) := curr_stride(rand)
-      last_addr(rand) := io.req_paddr
-      confidence(rand) := 1.U
+      paddr_buffer(hit_sel) := io.req_paddr
+    } .elsewhen (~miss_sel(miss_sel.getWidth - 1)) { // miss with free slot
+      stride_buffer(miss_sel) := mshr_req_stride(miss_sel)
+      paddr_buffer(miss_sel) := io.req_paddr
+      valid_stride(miss_sel) := true.B
+    } .otherwise { // miss with no free slot
+      stride_buffer(rand_sel) := mshr_req_stride(rand_sel)
+      paddr_buffer(rand_sel) := io.req_paddr
     }
   } .elsewhen (io.prefetch.fire) {
     req_valid := false.B
@@ -165,6 +152,3 @@ class IndirectPrefetcher(implicit edge: TLEdgeOut, p: Parameters) extends DataPr
   io.prefetch.valid := false.B
   io.prefetch.bits  := DontCare
 }
-
-
-
