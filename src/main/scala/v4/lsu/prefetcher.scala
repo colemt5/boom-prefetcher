@@ -28,6 +28,7 @@ abstract class DataPrefetcher(implicit edge: TLEdgeOut, p: Parameters) extends B
     val req_val    = Input(Bool())
     val req_paddr  = Input(UInt(coreMaxAddrBits.W))
     val req_vaddr  = Input(UInt(coreMaxAddrBits.W))
+    val req_data   = Input(UInt(coreDataBits.W))
     val req_coh    = Input(new ClientMetadata)
 
     val prefetch   = Decoupled(new BoomDCacheReq)
@@ -144,11 +145,55 @@ class StridePrefetcher(implicit edge: TLEdgeOut, p: Parameters, sbSize: Int = 4)
 }
 
 /**
-  * Indirect prefetcher. Grabs the next line on a cache miss
-  */
-class IndirectPrefetcher(implicit edge: TLEdgeOut, p: Parameters) extends DataPrefetcher
-{
+  * Indirect prefetcher. Determines whether data most recently pulled into the
+  * cache is a pointer and, if so, prefetches the data at the pointer's location
+  */ 
+ class IndirectPrefetcher(implicit edge: TLEdgeOut, p: Parameters) extends DataPrefetcher
+ {
+  val req_valid = RegInit(false.B)
+  val req_paddr = Reg(UInt(coreMaxAddrBits.W))
+  val req_vaddr = Reg(UInt(coreMaxAddrBits.W))
+  val req_data  = Reg(UInt(coreDataBits.W))
+  val req_cmd   = Reg(UInt(M_SZ.W))
 
-  io.prefetch.valid := false.B
-  io.prefetch.bits  := DontCare
+  val mshr_req_addr = io.req_data // If data is an address, we will prefetch from there
+  val cacheable = edge.manager.supportsAcquireBSafe(mshr_req_addr, lgCacheBlockBytes.U)
+  
+  val M = 8 // Width of Compare Bits section
+  val N = 4 // Width of Filter Bits section
+  val data_addr_match = RegInit(false.B)
+
+  
+  when (io.req_val && cacheable) {
+    req_valid := true.B
+    req_paddr  := mshr_req_addr
+    req_vaddr  := io.req_vaddr
+    req_cmd   := Mux(ClientStates.hasWritePermission(io.req_coh.state), M_PFW, M_PFR)
+  } .elsewhen (io.prefetch.fire) {
+    req_valid := false.B
+  }
+
+  val addr_compare = req_vaddr(coreMaxAddrBits - 1, coreMaxAddrBits - M)
+  val addr_filter  = req_vaddr(coreMaxAddrBits - M - 1, coreMaxAddrBits - M - N)
+  val data_compare = req_data(coreMaxAddrBits - 1, coreMaxAddrBits - M)
+  val data_filter  = req_data(coreMaxAddrBits - M - 1, coreMaxAddrBits - M - N)
+  if (addr_compare == data_compare) { // Base address matches
+    if ((data_compare == (1 << (N - 1))) && (data_filter != (1 << (N - 1)))) {
+      // Base address is all 1's, so check the next M bits for a 0
+      data_addr_match := true.B
+    } else if ((data_compare == 0.U) && (data_filter != 0.U)) {
+      // Base address is all 0's, so check the next M bits for a 1
+      data_addr_match := true.B
+    }
+  } else {
+    data_addr_match := false.B
+  }
+
+  io.prefetch.valid            := req_valid && io.mshr_avail && data_addr_match
+  io.prefetch.bits.paddr       := req_paddr
+  io.prefetch.bits.vaddr       := DontCare
+  io.prefetch.bits.uop         := NullMicroOp
+  io.prefetch.bits.uop.mem_cmd := req_cmd
+  io.prefetch.bits.data        := DontCare
+  io.prefetch.bits.is_hella    := false.B
 }
