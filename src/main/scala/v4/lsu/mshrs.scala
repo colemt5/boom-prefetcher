@@ -76,6 +76,7 @@ class BoomMSHR(implicit edge: TLEdgeOut, p: Parameters) extends BoomModule()(p)
     val commit_val  = Output(Bool())
     val commit_paddr = Output(UInt(coreMaxAddrBits.W))
     val commit_vaddr = Output(UInt(coreMaxAddrBits.W))
+    val commit_data = Output(UInt(coreDataBits.W))
     val commit_pc_lob = Output(UInt(log2Ceil(icBlockBytes).W))
     val commit_coh  = Output(new ClientMetadata)
 
@@ -189,6 +190,7 @@ class BoomMSHR(implicit edge: TLEdgeOut, p: Parameters) extends BoomModule()(p)
   io.commit_val          := false.B
   io.commit_paddr         := req.paddr
   io.commit_vaddr         := req.vaddr
+  io.commit_data         := req.data
   io.commit_pc_lob       := req.uop.pc_lob
   io.commit_coh          := coh_on_grant
   io.meta_read.valid     := false.B
@@ -598,6 +600,7 @@ class BoomMSHRFile(implicit edge: TLEdgeOut, p: Parameters) extends BoomModule()
   val commit_vals    = Wire(Vec(cfg.nMSHRs, Bool()))
   val commit_paddrs   = Wire(Vec(cfg.nMSHRs, UInt(coreMaxAddrBits.W)))
   val commit_vaddrs   = Wire(Vec(cfg.nMSHRs, UInt(coreMaxAddrBits.W)))
+  val commit_datas   = Wire(Vec(cfg.nMSHRs, UInt(coreDataBits.W)))
   val commit_pc_lob   = Wire(Vec(cfg.nMSHRs, UInt(log2Ceil(icBlockBytes).W)))
   val commit_cohs    = Wire(Vec(cfg.nMSHRs, new ClientMetadata))
 
@@ -662,6 +665,7 @@ class BoomMSHRFile(implicit edge: TLEdgeOut, p: Parameters) extends BoomModule()
     commit_vals(i)  := mshr.io.commit_val
     commit_paddrs(i) := mshr.io.commit_paddr
     commit_vaddrs(i) := mshr.io.commit_vaddr
+    commit_datas(i) := mshr.io.commit_data
     commit_pc_lob(i) := mshr.io.commit_pc_lob
     commit_cohs(i)  := mshr.io.commit_coh
 
@@ -759,6 +763,7 @@ class BoomMSHRFile(implicit edge: TLEdgeOut, p: Parameters) extends BoomModule()
   prefetcher.io.req_val       := RegNext(commit_vals.reduce(_||_))
   prefetcher.io.req_paddr     := RegNext(Mux1H(commit_vals, commit_paddrs))
   prefetcher.io.req_vaddr     := RegNext(Mux1H(commit_vals, commit_vaddrs))
+  prefetcher.io.req_data      := RegNext(Mux1H(commit_vals, commit_datas))
   prefetcher.io.req_pc_lob    := RegNext(Mux1H(commit_vals, commit_pc_lob))
   prefetcher.io.req_coh       := RegNext(Mux1H(commit_vals, commit_cohs))
 }
