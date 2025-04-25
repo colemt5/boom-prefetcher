@@ -691,6 +691,29 @@ class BoomNonBlockingDCacheModule(outer: BoomNonBlockingDCache) extends LazyModu
 
   val s2_wb_idx_matches = RegNext(s1_wb_idx_matches)
 
+  // ! Debug Prints
+  if (true) {
+    val cycle = RegInit(0.U(32.W))
+    val lastPfetchAddr = VecInit(Seq.fill(lsuWidth)(RegInit(0.U(coreMaxAddrBits.W))))
+    cycle := cycle + 1.U
+
+    for (w <- 0 until lsuWidth) {
+      when (s2_valid(w)) {
+        when (isPrefetch(s2_req(w).uop.mem_cmd) && !s2_nack(w)) {
+          lastPfetchAddr(w) := s2_req(w).paddr
+        }
+        when (s2_hit(w)) {
+          when ((s2_req(w).paddr >> 6 & ~lastPfetchAddr(w) >> 6) === 0.U) {
+            printf(p"  [DCACHE] CYCLE: ${cycle}  **** Prefetch did something yay ****\n")
+          }
+          printf(p"  [DCACHE] CYCLE: ${cycle}   HIT: pc: ${Hexadecimal(s2_req(w).uop.pc_lob)} addr=0x${Hexadecimal(s2_req(w).paddr)} nack:${s2_nack(w)} mshr_valid: ${mshrs.io.req(w).valid} isprefetch: ${isPrefetch(s2_req(w).uop.mem_cmd)}\n")
+        }.otherwise {
+          printf(p"  [DCACHE] CYCLE: ${cycle}  MISS: pc: ${Hexadecimal(s2_req(w).uop.pc_lob)} addr=0x${Hexadecimal(s2_req(w).paddr)} nack:${s2_nack(w)} mshr_valid: ${mshrs.io.req(w).valid} isprefetch: ${isPrefetch(s2_req(w).uop.mem_cmd)}\n")
+        }
+      }
+    }
+  }
+  
   // lr/sc
   val debug_sc_fail_addr = RegInit(0.U)
   val debug_sc_fail_cnt  = RegInit(0.U(8.W))

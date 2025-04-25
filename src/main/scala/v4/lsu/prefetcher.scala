@@ -74,6 +74,20 @@ class NLPrefetcher(implicit edge: TLEdgeOut, p: Parameters) extends DataPrefetch
   io.prefetch.bits.uop.mem_cmd := req_cmd
   io.prefetch.bits.data        := DontCare
   io.prefetch.bits.is_hella    := false.B
+  
+  // ! Debug prints
+  if (true) {
+    val cycles = RegInit(0.U(32.W))
+    cycles := cycles + 1.U
+
+    when (io.prefetch.fire) {
+      printf(p"@ [PFETCH] CYCLE: ${cycles} PREFETCHING req_addr 0x${Hexadecimal(req_paddr)}\n")
+    }
+
+    when (io.req_val) {
+      printf(p"~ [PFETCH] CYCLE: ${cycles} io.req_addr=0x${Hexadecimal(io.req_paddr)} [${Hexadecimal(mshr_req_paddr)}]\n")
+    }
+  }
 }
 
 /**
@@ -89,7 +103,6 @@ class StridePrefetcher(implicit edge: TLEdgeOut, p: Parameters, sbDepth: Int = 3
 
   val req_valid = RegInit(false.B)
   val req_paddr = Reg(UInt(coreMaxAddrBits.W))
-  val req_vaddr = Reg(UInt(coreMaxAddrBits.W))
   val req_cmd   = Reg(UInt(M_SZ.W))
 
   // Prefetcher state
@@ -103,8 +116,6 @@ class StridePrefetcher(implicit edge: TLEdgeOut, p: Parameters, sbDepth: Int = 3
 
   val mshr_req_paddr = Wire(UInt(coreMaxAddrBits.W))
   mshr_req_paddr := ((io.req_paddr).asSInt + stride_buffer(idx)).asUInt
-
-  val mshr_req_lob = mshr_req_paddr(sbWidth-1, 0)
 
   val mshr_req_stride = Wire(SInt(16.W))
   mshr_req_stride := (io.req_paddr(sbWidth-1, 0) - paddr_lob_buffer(idx)).asSInt
@@ -136,6 +147,21 @@ class StridePrefetcher(implicit edge: TLEdgeOut, p: Parameters, sbDepth: Int = 3
   io.prefetch.bits.uop.mem_cmd := req_cmd
   io.prefetch.bits.data        := DontCare
   io.prefetch.bits.is_hella    := false.B
+
+  // ! Debug prints
+  if (true) {
+    val cycles = RegInit(0.U(32.W))
+    cycles := cycles + 1.U
+
+    when (io.prefetch.fire) {
+      printf(p"@ [PFETCH] CYCLE: ${cycles} PREFETCHING req_addr 0x${Hexadecimal(req_paddr)}\n")
+    }
+
+    when (io.req_val) {
+      printf(p"~ [PFETCH] CYCLE: ${cycles} io.req_addr=0x${Hexadecimal(io.req_paddr)} [${Hexadecimal(mshr_req_paddr)}] lob=${io.req_pc_lob(0)} idx=${idx}")
+      printf(p"[${mshr_req_stride} - ${stride_buffer(idx)}] [${Hexadecimal(io.req_paddr(sbWidth-1, 0))} - ${Hexadecimal(paddr_lob_buffer(idx))}]\n")
+    }
+  }
 }
 
 /**
