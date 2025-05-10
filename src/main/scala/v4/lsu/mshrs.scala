@@ -97,13 +97,20 @@ class BoomMSHR(implicit edge: TLEdgeOut, p: Parameters) extends BoomModule()(p)
   })
   
   // ! This is debug setup
-  val enableDebug = true
+  val enableDebug = false
+  val enableCounts = true
 
   val rpqFlag = RegInit(false.B)
   val wasPrefetch = RegInit(false.B)
   val countPrefetch = RegInit(0.U(32.W))
   val cycles = RegInit(0.U(32.W))
   cycles := cycles + 1.U
+  val count_s_mem_finish_2 = RegInit(0.U(32.W))
+  val count_s_prefetch = RegInit(0.U(32.W))
+  val count_s_invalid = RegInit(0.U(32.W))
+  val count_s_meta_read = RegInit(0.U(32.W))
+  val count_s_refill_req = RegInit(0.U(32.W))
+  val count_handle_pri_req = RegInit(0.U(32.W))
   // ! End debug setup
 
   // TODO: Optimize this. We don't want to mess with cache during speculation
@@ -411,13 +418,33 @@ class BoomMSHR(implicit edge: TLEdgeOut, p: Parameters) extends BoomModule()(p)
     when (io.mem_finish.fire || !grantack.valid) {
       grantack.valid := false.B
       state := s_mem_finish_2
+
+      // ! This is a togglable debug print
+      if (enableCounts) {
+        count_s_mem_finish_2 := count_s_mem_finish_2 + 1.U
+        printf(p"s_mem_finish: ${count_s_mem_finish_2}\n")
+      }
     }
   } .elsewhen (state === s_mem_finish_2) {
     state := Mux(finish_to_prefetch, s_prefetch, s_invalid)
+    // ! This is a togglable debug print
+    if (enableCounts) {
+      when(finish_to_prefetch) {
+        count_s_prefetch := count_s_prefetch + 1.U
+        printf(p"s_prefetch: ${count_s_prefetch}\n")
+      }
+    }
   } .elsewhen (state === s_prefetch) {
     io.req_pri_rdy := true.B
     when ((io.req_sec_val && !io.req_sec_rdy) || io.clear_prefetch) {
       state := s_invalid
+
+      // ! This is a togglable debug print
+      if (enableCounts) {
+        count_s_invalid := count_s_invalid + 1.U
+        printf(p"s_invalid: ${count_s_invalid}\n")
+      }
+
       // ! This is a togglable debug print
       if (enableDebug) {
         printf(p"! [MSHR ${io.id}] CYCLE: ${cycles} SKIP PREFETCH Addr 0x${Hexadecimal(req.paddr)}\n")
@@ -431,6 +458,12 @@ class BoomMSHR(implicit edge: TLEdgeOut, p: Parameters) extends BoomModule()(p)
         }
         new_coh := coh_on_hit // ? is this when we prefetch?
         state := s_meta_read
+
+        // ! This is a togglable debug print
+        if (enableCounts) {
+          count_s_meta_read := count_s_meta_read + 1.U
+          printf(p"s_meta_read: ${count_s_meta_read}\n")
+        }
       } .otherwise { // Reacquire this line
         // ! This is a togglable debug print
         if (enableDebug) {
@@ -438,6 +471,12 @@ class BoomMSHR(implicit edge: TLEdgeOut, p: Parameters) extends BoomModule()(p)
         }
         new_coh := ClientMetadata.onReset
         state := s_refill_req // ? why reaquire if no hit. what does this mean
+
+        // ! This is a togglable debug print
+        if (enableCounts) {
+          count_s_refill_req := count_s_refill_req + 1.U
+          printf(p"s_refill_req: ${count_s_refill_req}\n")
+        }
       }
     } .elsewhen (io.req_pri_val && io.req_pri_rdy) {
       // ! This is a togglable debug print
@@ -446,6 +485,12 @@ class BoomMSHR(implicit edge: TLEdgeOut, p: Parameters) extends BoomModule()(p)
       }
       grant_had_data := false.B
       state := handle_pri_req(state)
+
+      // ! This is a togglable debug print
+      if (enableCounts) {
+        count_handle_pri_req := count_handle_pri_req + 1.U
+        printf(p"s_handle_pri_req: ${count_handle_pri_req}\n")
+      }
     }
   }
 }
@@ -594,6 +639,8 @@ class BoomMSHRFile(implicit edge: TLEdgeOut, p: Parameters) extends BoomModule()
 
     val fence_rdy = Output(Bool())
     val probe_rdy = Output(Bool())
+
+    val commit_data = Input(UInt(coreDataBits.W))
   })
 
   val req_idx = OHToUInt(io.req.map(_.valid))
@@ -723,7 +770,21 @@ class BoomMSHRFile(implicit edge: TLEdgeOut, p: Parameters) extends BoomModule()
     commit_vals(i)  := mshr.io.commit_val
     commit_paddrs(i) := mshr.io.commit_paddr
     commit_vaddrs(i) := mshr.io.commit_vaddr
-    commit_datas(i) := mshr.io.commit_data
+    commit_datas(i) := io.commit_data // Results in spreadsheet use  mshr.io.commit_data
+    // Doesn't work because of syntax/doesn't exist:
+    // io.req(i).data
+    // io.req.data 
+    // io.req.bits.data
+
+    // Index out of bounds:
+    // io.req(i).bits.data
+    // io.req(1).bits.data
+
+    // Doesn't match miss data (or... it does at some points but stays static for a while):
+    // mshr.io.req.data
+
+    // 3
+    // io.req(0).bits.data 
     commit_pc_lob(i) := mshr.io.commit_pc_lob
     commit_cohs(i)  := mshr.io.commit_coh
 
