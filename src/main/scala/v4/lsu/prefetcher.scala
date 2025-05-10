@@ -190,12 +190,12 @@ class StridePrefetcher(implicit edge: TLEdgeOut, p: Parameters, sbDepth: Int = 3
   val data_addr_match = RegInit(false.B)
 
   // ! Debug prints
-  if (true) {
     val cycle = RegInit(0.U(32.W))
     val lastPfetchAddr = VecInit(Seq.fill(lsuWidth)(RegInit(0.U(coreMaxAddrBits.W))))
     cycle := cycle + 1.U
     val count_match = RegInit(0.U(32.W))
     val flag = RegInit(false.B)
+  if (true) {
     when (io.req_val && !flag) {
       printf(p"Start Cycle=${cycle}\n")
       flag := true.B
@@ -210,8 +210,10 @@ class StridePrefetcher(implicit edge: TLEdgeOut, p: Parameters, sbDepth: Int = 3
     req_cmd   := Mux(ClientStates.hasWritePermission(io.req_coh.state), M_PFW, M_PFR)
   } .elsewhen (io.prefetch.fire) {
     req_valid := false.B
-    count_match := count_match + 1.U
-    printf(p"match: ${count_match}\n")
+    if (false) {
+      count_match := count_match + 1.U
+      printf(p"match: ${count_match}\n")
+    }
   }
 
   // ! Debug prints
