@@ -458,6 +458,7 @@ class BoomNonBlockingDCacheModule(outer: BoomNonBlockingDCache) extends LazyModu
   val wb = Module(new BoomWritebackUnit)
   val prober = Module(new BoomProbeUnit)
   val mshrs = Module(new BoomMSHRFile)
+  mshrs.io.commit_data := DontCare // or 0.U for now
   mshrs.io.clear_all    := io.lsu.force_order
   mshrs.io.brupdate       := io.lsu.brupdate
   mshrs.io.exception    := io.lsu.exception
@@ -601,6 +602,7 @@ class BoomNonBlockingDCacheModule(outer: BoomNonBlockingDCache) extends LazyModu
   val prefetch_req  = Wire(Vec(lsuWidth, new BoomDCacheReq))
   prefetch_req    := DontCare
   prefetch_req(0) := mshrs.io.prefetch.bits
+  prefetch_req(0).data := mshrs.io.commit_data
   // Tag read for prefetch
   metaReadArb.io.in(5).valid              := mshrs.io.prefetch.valid
   metaReadArb.io.in(5).bits.req(0).idx    := mshrs.io.prefetch.bits.paddr >> blockOffBits
@@ -826,6 +828,7 @@ class BoomNonBlockingDCacheModule(outer: BoomNonBlockingDCache) extends LazyModu
     mshrs.io.req(w).bits             := DontCare
     mshrs.io.req(w).bits.uop         := s2_req(w).uop
     mshrs.io.req(w).bits.paddr        := s2_req(w).paddr
+    mshrs.io.req(w).bits.vaddr        := s2_req(w).vaddr
     mshrs.io.req(w).bits.tag_match   := s2_tag_match(w)
     mshrs.io.req(w).bits.old_meta    := Mux(s2_tag_match(w), L1Metadata(s2_repl_meta(w).tag, s2_hit_state(w)), s2_repl_meta(w))
     mshrs.io.req(w).bits.way_en      := Mux(s2_tag_match(w), s2_tag_match_way(w), s2_replaced_way_en)
@@ -833,6 +836,12 @@ class BoomNonBlockingDCacheModule(outer: BoomNonBlockingDCache) extends LazyModu
     mshrs.io.req(w).bits.data        := s2_req(w).data
     mshrs.io.req(w).bits.is_hella    := s2_req(w).is_hella
     mshrs.io.req_is_probe(w)         := s2_type === t_probe && s2_valid(w)
+    
+    mshrs.io.commit_data := s2_req(w).data
+    // ! Debug prints
+    when (!mshrs.io.req_is_probe(w)) {
+      // printf(p"Miss data: 0x${Hexadecimal(s2_req(w).data)}\n")
+    }
   }
 
   mshrs.io.meta_resp.valid      := !s2_nack_hit(0) || prober.io.mshr_wb_rdy

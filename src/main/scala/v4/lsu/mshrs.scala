@@ -643,6 +643,8 @@ class BoomMSHRFile(implicit edge: TLEdgeOut, p: Parameters) extends BoomModule()
 
     val fence_rdy = Output(Bool())
     val probe_rdy = Output(Bool())
+
+    val commit_data = Input(UInt(coreDataBits.W))
   })
 
   val req_idx = OHToUInt(io.req.map(_.valid))
@@ -772,7 +774,21 @@ class BoomMSHRFile(implicit edge: TLEdgeOut, p: Parameters) extends BoomModule()
     commit_vals(i)  := mshr.io.commit_val
     commit_paddrs(i) := mshr.io.commit_paddr
     commit_vaddrs(i) := mshr.io.commit_vaddr
-    commit_datas(i) := mshr.io.commit_data
+    commit_datas(i) := io.commit_data // Results in spreadsheet use  mshr.io.commit_data
+    // Doesn't work because of syntax/doesn't exist:
+    // io.req(i).data
+    // io.req.data 
+    // io.req.bits.data
+
+    // Index out of bounds:
+    // io.req(i).bits.data
+    // io.req(1).bits.data
+
+    // Doesn't match miss data (or... it does at some points but stays static for a while):
+    // mshr.io.req.data
+
+    // 3
+    // io.req(0).bits.data 
     commit_pc_lob(i) := mshr.io.commit_pc_lob
     commit_cohs(i)  := mshr.io.commit_coh
 

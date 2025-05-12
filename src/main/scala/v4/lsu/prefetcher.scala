@@ -76,7 +76,7 @@ class NLPrefetcher(implicit edge: TLEdgeOut, p: Parameters) extends DataPrefetch
   io.prefetch.bits.is_hella    := false.B
   
   // ! Debug prints
-  if (true) {
+  if (false) {
     val cycles = RegInit(0.U(32.W))
     cycles := cycles + 1.U
 
@@ -183,34 +183,86 @@ class StridePrefetcher(implicit edge: TLEdgeOut, p: Parameters, sbDepth: Int = 3
   val N = 4 // Width of Filter Bits section
   val data_addr_match = RegInit(false.B)
 
-  
+  // ! Debug prints
+    val cycle = RegInit(0.U(32.W))
+    val lastPfetchAddr = VecInit(Seq.fill(lsuWidth)(RegInit(0.U(coreMaxAddrBits.W))))
+    cycle := cycle + 1.U
+    val count_match = RegInit(0.U(32.W))
+    val flag = RegInit(false.B)
+  if (true) {
+    when (io.req_val && !flag) {
+      printf(p"Start Cycle=${cycle}\n")
+      flag := true.B
+    }
+  }
+
   when (io.req_val && cacheable) {
     req_valid := true.B
-    req_paddr  := mshr_req_addr
+    req_paddr  := io.req_paddr
     req_vaddr  := io.req_vaddr
+    req_data   := io.req_data
     req_cmd   := Mux(ClientStates.hasWritePermission(io.req_coh.state), M_PFW, M_PFR)
   } .elsewhen (io.prefetch.fire) {
     req_valid := false.B
+    if (true) {
+      count_match := count_match + 1.U
+      printf(p"match: ${count_match}\n")
+    }
   }
+
+  // ! Debug prints
+  if (false) {
+    printf(p"Cycle: ${cycle}   VA:   0x${Hexadecimal(req_vaddr)}\n")
+    printf(p"Cycle: ${cycle}   PA:   0x${Hexadecimal(req_paddr)}\n")
+    printf(p"Cycle: ${cycle}   Data: 0x${Hexadecimal(req_data)}\n")
+  }
+  
 
   val addr_compare = req_vaddr(coreMaxAddrBits - 1, coreMaxAddrBits - M)
   val addr_filter  = req_vaddr(coreMaxAddrBits - M - 1, coreMaxAddrBits - M - N)
   val data_compare = req_data(coreMaxAddrBits - 1, coreMaxAddrBits - M)
   val data_filter  = req_data(coreMaxAddrBits - M - 1, coreMaxAddrBits - M - N)
-  if (addr_compare == data_compare) { // Base address matches
-    if ((data_compare == (1 << (N - 1))) && (data_filter != (1 << (N - 1)))) {
-      // Base address is all 1's, so check the next M bits for a 0
-      data_addr_match := true.B
-    } else if ((data_compare == 0.U) && (data_filter != 0.U)) {
-      // Base address is all 0's, so check the next M bits for a 1
+
+  // ! Debug prints
+  if (false) {
+    printf(p"Cycle: ${cycle}   A Comp: 0x${Hexadecimal(addr_compare)}\n")
+    printf(p"Cycle: ${cycle}   D Comp: 0x${Hexadecimal(data_compare)}\n")
+    printf(p"Cycle: ${cycle}   A Filt: 0x${Hexadecimal(addr_filter)}\n")
+    printf(p"Cycle: ${cycle}   D Filt: 0x${Hexadecimal(data_filter)}\n")
+  }
+  
+
+  val all_ones = (1.U << N) - 1.U   // e.g., 15 for N=4 → 1111b
+  val all_zeros = 0.U
+
+  when((req_data =/= 0.U) && (addr_compare === data_compare)) {
+    when (data_compare === all_ones) {
+      // Compare bits are all 1s →
+      // Prefetch only if next M bits != all ones
+      data_addr_match := (data_filter =/= all_ones)
+    } .elsewhen (data_compare === all_zeros) {
+      // Compare bits are all 0s →
+      // Prefetch only if next M bits != all zeros
+      data_addr_match := (data_filter =/= all_zeros)
+    } .otherwise {
+      // Compare bits are anything else → always prefetch
       data_addr_match := true.B
     }
-  } else {
+  } .otherwise {
     data_addr_match := false.B
   }
 
+
+
   io.prefetch.valid            := req_valid && io.mshr_avail && data_addr_match
-  io.prefetch.bits.paddr       := req_paddr
+  // ! Debug prints
+  if (false) {
+    printf(p"Cycle: ${cycle}   Req valid: ${req_valid}\n")
+    printf(p"Cycle: ${cycle}   MSHR avail: ${io.mshr_avail}\n")
+    printf(p"Cycle: ${cycle}   Match: ${data_addr_match}\n")
+    printf(p"\n")
+  }
+  io.prefetch.bits.paddr       := req_data // req_paddr
   io.prefetch.bits.vaddr       := DontCare
   io.prefetch.bits.uop         := NullMicroOp
   io.prefetch.bits.uop.mem_cmd := req_cmd
