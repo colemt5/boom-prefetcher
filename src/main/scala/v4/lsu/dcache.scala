@@ -692,7 +692,7 @@ class BoomNonBlockingDCacheModule(outer: BoomNonBlockingDCache) extends LazyModu
   val s2_wb_idx_matches = RegNext(s1_wb_idx_matches)
 
   // ! Debug Prints
-  if (true) {
+  if (false) {
     val cycle = RegInit(0.U(32.W))
     val lastPfetchAddr = VecInit(Seq.fill(lsuWidth)(RegInit(0.U(coreMaxAddrBits.W))))
     cycle := cycle + 1.U

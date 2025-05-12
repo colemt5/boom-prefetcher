@@ -481,6 +481,20 @@ class LSU(implicit p: Parameters, edge: TLEdgeOut) extends BoomModule()(p)
   val will_fire_load_wakeup       = Wire(Vec(lsuWidth, Bool()))
 
   val agen = io.core.agen
+
+  //! debug print
+  val started = RegInit(false.B)
+  val startCycle = Reg(UInt(64.W))
+  val globalCycle = RegInit(0.U(64.W))
+  globalCycle := globalCycle + 1.U
+
+  when (!started && will_fire_load_agen_exec.reduce(_||_)) {
+    started := true.B
+    startCycle := globalCycle
+    printf(p"[BOOT] Benchmark start detected at cycle: ${globalCycle}\n")
+  }
+  // ! end debug print
+
   // -------------------------------
   // Assorted signals for scheduling
 

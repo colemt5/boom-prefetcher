@@ -104,6 +104,17 @@ class BoomMSHR(implicit edge: TLEdgeOut, p: Parameters) extends BoomModule()(p)
   val countPrefetch = RegInit(0.U(32.W))
   val cycles = RegInit(0.U(32.W))
   cycles := cycles + 1.U
+  val acquireCount = RegInit(0.U(32.W))
+  val demandCount = RegInit(0.U(32.W))
+  val commitCount = RegInit(0.U(32.W))
+  val finishCount = RegInit(0.U(32.W))
+  val prefetchCount = RegInit(0.U(32.W))
+  val abandonPrefetchCount = RegInit(0.U(32.W))
+  val actuallyPrefetchCount = RegInit(0.U(32.W))
+  val reacquireCount = RegInit(0.U(32.W))
+  val hitCount = RegInit(0.U(32.W))
+  val writeCount = RegInit(0.U(32.W))
+  val readCount = RegInit(0.U(32.W))
   // ! End debug setup
 
   // TODO: Optimize this. We don't want to mess with cache during speculation
@@ -236,6 +247,8 @@ class BoomMSHR(implicit edge: TLEdgeOut, p: Parameters) extends BoomModule()(p)
         assert(isWrite(io.req.uop.mem_cmd))
         new_coh     := coh_on_hit
         new_state   := s_drain_rpq
+        // ? counter
+        hitCount := hitCount + 1.U
       } .otherwise { // upgrade permissions
         new_coh     := old_coh
         new_state   := s_refill_req
@@ -258,8 +271,10 @@ class BoomMSHR(implicit edge: TLEdgeOut, p: Parameters) extends BoomModule()(p)
     io.mem_acquire.valid := true.B
     when (io.mem_acquire.fire) {
       state := s_refill_resp
+      // ? counter
+      acquireCount := acquireCount + 1.U
       // ! This is a togglable debug print
-      if (enableDebug) {
+      if (false) {
         wasPrefetch := false.B
         when (wasPrefetch) {
           countPrefetch := countPrefetch + 1.U
@@ -285,6 +300,13 @@ class BoomMSHR(implicit edge: TLEdgeOut, p: Parameters) extends BoomModule()(p)
       assert(!(!grant_had_data && req_needs_wb))
       commit_line := false.B
       new_coh := coh_on_grant
+      when (grant_had_data) {
+        // ? counter
+        readCount := readCount + 1.U
+      } .otherwise {
+        // ? counter
+        writeCount := writeCount + 1.U
+      }
 
     }
   } .elsewhen (state === s_drain_rpq_loads) {
@@ -315,18 +337,21 @@ class BoomMSHR(implicit edge: TLEdgeOut, p: Parameters) extends BoomModule()(p)
     }
       .elsewhen (rpq.io.empty && !commit_line)
     {
-      // ! This is a togglable debug print
-      if (enableDebug) {
-        printf(p"! [MSHR ${io.id}] CYCLE: ${cycles} TRY TO PREFETCH Addr 0x${Hexadecimal(req.paddr)}\n")
-      }
       when (!rpq.io.enq.fire) {
-
+        // ? counter
+        prefetchCount := prefetchCount + 1.U
+        // ! This is a togglable debug print
+        if (false) {
+          printf(p"! [MSHR ${io.id}] CYCLE: ${cycles} SKIP COMMIT (IS A PREFETCH) Addr 0x${Hexadecimal(req.paddr)}\n")
+        }
         state := s_mem_finish_1
         finish_to_prefetch := enablePrefetching.B
       }
     } .elsewhen (rpq.io.empty || (rpq.io.deq.valid && !drain_load)) {
       // io.commit_val is for the prefetcher. it tells the prefetcher that this line was correctly acquired
       // The prefetcher should consider fetching the next line
+      // ? counter
+      demandCount := demandCount + 1.U
       io.commit_val := true.B
       state := s_meta_read
     }
@@ -364,7 +389,7 @@ class BoomMSHR(implicit edge: TLEdgeOut, p: Parameters) extends BoomModule()(p)
       refill_ctr := refill_ctr + 1.U
       when (refill_ctr === (cacheDataBeats - 1).U) {
         // ! This is a togglable debug print
-        if (enableDebug) {
+        if (false) {
           printf(p"> [MSHR ${io.id}] CYCLE: ${cycles} COMMIT LINE @ Addr: 0x${Hexadecimal(req.paddr)} Block Addr: 0x${Hexadecimal(req_block_addr)}\n")
         }
         state := s_drain_rpq
@@ -372,7 +397,7 @@ class BoomMSHR(implicit edge: TLEdgeOut, p: Parameters) extends BoomModule()(p)
     }
   } .elsewhen (state === s_drain_rpq) {
     // ! This is a togglable debug print
-    if (enableDebug) {
+    if (false) {
       rpqFlag := true.B
       when (!rpqFlag) {
         printf(p"( [MSHR ${io.id}] CYCLE: ${cycles} DRAIN RPQ START @ Addr: 0x${Hexadecimal(req.paddr)}\n")
@@ -391,7 +416,7 @@ class BoomMSHR(implicit edge: TLEdgeOut, p: Parameters) extends BoomModule()(p)
     when (rpq.io.empty && !rpq.io.enq.valid) {
       state := s_meta_write_req
       // ! This is a togglable debug print
-      if (enableDebug) {
+      if (false) {
         rpqFlag := false.B
         printf(p") [MSHR ${io.id}] CYCLE: ${cycles} DRAIN RPQ DONE @ Addr: 0x${Hexadecimal(req.paddr)}\n")
       }
@@ -403,45 +428,69 @@ class BoomMSHR(implicit edge: TLEdgeOut, p: Parameters) extends BoomModule()(p)
     io.meta_write.bits.data.tag := req_tag
     io.meta_write.bits.way_en   := req.way_en
     when (io.meta_write.fire) {
+      // ? counter
+      commitCount := commitCount + 1.U
       state := s_mem_finish_1
       finish_to_prefetch := false.B
     }
   } .elsewhen (state === s_mem_finish_1) {
     io.mem_finish.valid := grantack.valid
     when (io.mem_finish.fire || !grantack.valid) {
+      // ? counter
+      finishCount := finishCount + 1.U
       grantack.valid := false.B
       state := s_mem_finish_2
     }
   } .elsewhen (state === s_mem_finish_2) {
+    // ! This is a togglable debug print
+    if (true) {
+      when (finish_to_prefetch) {
+        printf(p"+ ")
+      } otherwise {
+        printf(p"  ")
+      }
+      printf(p"[MSHR ${io.id}] CYCLE: ${cycles} Aquire: ${acquireCount} Read: ${readCount} Write: ${writeCount} ")
+      printf(p"Prefetch: ${prefetchCount} Demand: ${demandCount} ")
+      printf(p"Hit: ${hitCount} Commit: ${commitCount} Finish: ${finishCount} NoPrefetch: ${abandonPrefetchCount} ")
+      printf(p"YesPrefetch: ${actuallyPrefetchCount} Reacquire: ${reacquireCount}\n ")
+    }
     state := Mux(finish_to_prefetch, s_prefetch, s_invalid)
   } .elsewhen (state === s_prefetch) {
     io.req_pri_rdy := true.B
     when ((io.req_sec_val && !io.req_sec_rdy) || io.clear_prefetch) {
       state := s_invalid
+      // ? counter
+      abandonPrefetchCount := abandonPrefetchCount + 1.U
       // ! This is a togglable debug print
-      if (enableDebug) {
+      if (false) {
         printf(p"! [MSHR ${io.id}] CYCLE: ${cycles} SKIP PREFETCH Addr 0x${Hexadecimal(req.paddr)}\n")
       }
     } .elsewhen (io.req_sec_val && io.req_sec_rdy) {
-      val (is_hit, _, coh_on_hit) = new_coh.onAccess(io.req.uop.mem_cmd) // ? what does this do
+      val (is_hit, _, coh_on_hit) = new_coh.onAccess(io.req.uop.mem_cmd)
       when (is_hit) { // Proceed with refill 
+        // ? counter
+        actuallyPrefetchCount := actuallyPrefetchCount + 1.U
         // ! This is a togglable debug print
-        if (enableDebug) {
+        if (false) {
           printf(p"* [MSHR ${io.id}] CYCLE: ${cycles} ACTUALLTY PREFETCH!! Addr 0x${Hexadecimal(req.paddr)}\n")
         }
-        new_coh := coh_on_hit // ? is this when we prefetch?
+        new_coh := coh_on_hit
         state := s_meta_read
       } .otherwise { // Reacquire this line
+        // ? counter
+        reacquireCount := reacquireCount + 1.U
         // ! This is a togglable debug print
-        if (enableDebug) {
+        if (false) {
           printf(p"? [MSHR ${io.id}] CYCLE: ${cycles} REAQUIRE PREFETCH Addr 0x${Hexadecimal(req.paddr)}\n")
         }
         new_coh := ClientMetadata.onReset
-        state := s_refill_req // ? why reaquire if no hit. what does this mean
+        state := s_refill_req
       }
     } .elsewhen (io.req_pri_val && io.req_pri_rdy) {
+      // ? counter
+      abandonPrefetchCount := abandonPrefetchCount + 1.U
       // ! This is a togglable debug print
-      if (enableDebug) {
+      if (false) {
         printf(p"& [MSHR ${io.id}] CYCLE: ${cycles} NOT PREFETCHING Addr 0x${Hexadecimal(req.paddr)}\n")
       }
       grant_had_data := false.B

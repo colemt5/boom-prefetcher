@@ -154,12 +154,12 @@ class StridePrefetcher(implicit edge: TLEdgeOut, p: Parameters, sbDepth: Int = 3
     cycles := cycles + 1.U
 
     when (io.prefetch.fire) {
-      printf(p"@ [PFETCH] CYCLE: ${cycles} PREFETCHING req_addr 0x${Hexadecimal(req_paddr)}\n")
+      // printf(p"@ [PFETCH] CYCLE: ${cycles} PREFETCHING req_addr 0x${Hexadecimal(req_paddr)}\n")
     }
 
     when (io.req_val) {
-      printf(p"~ [PFETCH] CYCLE: ${cycles} io.req_addr=0x${Hexadecimal(io.req_paddr)} [${Hexadecimal(mshr_req_paddr)}] lob=${io.req_pc_lob(0)} idx=${idx}")
-      printf(p"[${mshr_req_stride} - ${stride_buffer(idx)}] [${Hexadecimal(io.req_paddr(sbWidth-1, 0))} - ${Hexadecimal(paddr_lob_buffer(idx))}]\n")
+      // printf(p"~ [PFETCH] CYCLE: ${cycles} io.req_addr=0x${Hexadecimal(io.req_paddr)} [${Hexadecimal(mshr_req_paddr)}] lob=${io.req_pc_lob(0)} idx=${idx}")
+      // printf(p"[${mshr_req_stride} - ${stride_buffer(idx)}] [${Hexadecimal(io.req_paddr(sbWidth-1, 0))} - ${Hexadecimal(paddr_lob_buffer(idx))}]\n")
     }
   }
 }

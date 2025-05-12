@@ -120,14 +120,14 @@ class WithNSmallBoomsPrefetch(n: Int = 1, prefetchingType: String = "NL") extend
               numStqEntries = 8,
               maxBrCount = 8,
               numFetchBufferEntries = 8,
-              enablePrefetching = true,
+              enablePrefetching = prefetchingType != "Null",
               prefetchingType = prefetchingType,
               ftq = FtqParameters(nEntries=16),
               nPerfCounters = 2,
               fpu = Some(freechips.rocketchip.tile.FPUParams(sfmaLatency=4, dfmaLatency=4, divSqrt=true))
             ),
             dcache = Some(
-              DCacheParams(rowBits = 64, nSets=64, nWays=4, nMSHRs=2, nTLBWays=8)
+              DCacheParams(rowBits = 64, nSets=64, nWays=4, nMSHRs=4, nTLBWays=8)
             ),
             icache = Some(
               ICacheParams(rowBits = 64, nSets=64, nWays=4, fetchBytes=2*4)
