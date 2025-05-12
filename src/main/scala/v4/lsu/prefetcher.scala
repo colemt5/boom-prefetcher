@@ -210,7 +210,7 @@ class StridePrefetcher(implicit edge: TLEdgeOut, p: Parameters, sbDepth: Int = 3
     req_cmd   := Mux(ClientStates.hasWritePermission(io.req_coh.state), M_PFW, M_PFR)
   } .elsewhen (io.prefetch.fire) {
     req_valid := false.B
-    if (false) {
+    if (true) {
       count_match := count_match + 1.U
       printf(p"match: ${count_match}\n")
     }
@@ -242,12 +242,12 @@ class StridePrefetcher(implicit edge: TLEdgeOut, p: Parameters, sbDepth: Int = 3
     // ! Debug print
     // printf(p"Cycle: ${cycle}   Base match\n")
 
-    when((data_compare === (1.U << (N - 1))) && (data_filter =/= (1.U << (N - 1)))) {
-      data_addr_match := true.B
-    } .elsewhen((data_compare === 0.U) && (data_filter =/= 0.U)) {
-      data_addr_match := true.B
-    } .otherwise {
+    when((data_compare === (1.U << (N - 1))) && (data_filter === (1.U << (N - 1)))) {
       data_addr_match := false.B
+    } .elsewhen((data_compare === 0.U) && (data_filter === 0.U)) {
+      data_addr_match := false.B
+    } .otherwise {
+      data_addr_match := true.B
     }
 
   } .otherwise {

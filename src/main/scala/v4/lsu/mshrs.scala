@@ -98,7 +98,7 @@ class BoomMSHR(implicit edge: TLEdgeOut, p: Parameters) extends BoomModule()(p)
   
   // ! This is debug setup
   val enableDebug = false
-  val enableCounts = true
+  val enableCounts = false
 
   val rpqFlag = RegInit(false.B)
   val wasPrefetch = RegInit(false.B)
