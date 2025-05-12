@@ -238,21 +238,26 @@ class StridePrefetcher(implicit edge: TLEdgeOut, p: Parameters, sbDepth: Int = 3
   }
   
 
-  when((req_data =/= 0.U) && (addr_compare === data_compare)) {
-    // ! Debug print
-    // printf(p"Cycle: ${cycle}   Base match\n")
+  val all_ones = (1.U << N) - 1.U   // e.g., 15 for N=4 → 1111b
+  val all_zeros = 0.U
 
-    when((data_compare === (1.U << (N - 1))) && (data_filter === (1.U << (N - 1)))) {
-      data_addr_match := false.B
-    } .elsewhen((data_compare === 0.U) && (data_filter === 0.U)) {
-      data_addr_match := false.B
+  when((req_data =/= 0.U) && (addr_compare === data_compare)) {
+    when (data_compare === all_ones) {
+      // Compare bits are all 1s →
+      // Prefetch only if next M bits != all ones
+      data_addr_match := (data_filter =/= all_ones)
+    } .elsewhen (data_compare === all_zeros) {
+      // Compare bits are all 0s →
+      // Prefetch only if next M bits != all zeros
+      data_addr_match := (data_filter =/= all_zeros)
     } .otherwise {
+      // Compare bits are anything else → always prefetch
       data_addr_match := true.B
     }
-
   } .otherwise {
     data_addr_match := false.B
   }
+
 
 
   io.prefetch.valid            := req_valid && io.mshr_avail && data_addr_match
