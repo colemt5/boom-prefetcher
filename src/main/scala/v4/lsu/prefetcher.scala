@@ -74,20 +74,6 @@ class NLPrefetcher(implicit edge: TLEdgeOut, p: Parameters) extends DataPrefetch
   io.prefetch.bits.uop.mem_cmd := req_cmd
   io.prefetch.bits.data        := DontCare
   io.prefetch.bits.is_hella    := false.B
-  
-  // ! Debug prints
-  if (false) {
-    val cycles = RegInit(0.U(32.W))
-    cycles := cycles + 1.U
-
-    when (io.prefetch.fire) {
-      printf(p"@ [PFETCH] CYCLE: ${cycles} PREFETCHING req_addr 0x${Hexadecimal(req_paddr)}\n")
-    }
-
-    when (io.req_val) {
-      printf(p"~ [PFETCH] CYCLE: ${cycles} io.req_addr=0x${Hexadecimal(io.req_paddr)} [${Hexadecimal(mshr_req_paddr)}]\n")
-    }
-  }
 }
 
 /**
@@ -147,21 +133,6 @@ class StridePrefetcher(implicit edge: TLEdgeOut, p: Parameters, sbDepth: Int = 3
   io.prefetch.bits.uop.mem_cmd := req_cmd
   io.prefetch.bits.data        := DontCare
   io.prefetch.bits.is_hella    := false.B
-
-  // ! Debug prints
-  if (true) {
-    val cycles = RegInit(0.U(32.W))
-    cycles := cycles + 1.U
-
-    when (io.prefetch.fire) {
-      // printf(p"@ [PFETCH] CYCLE: ${cycles} PREFETCHING req_addr 0x${Hexadecimal(req_paddr)}\n")
-    }
-
-    when (io.req_val) {
-      // printf(p"~ [PFETCH] CYCLE: ${cycles} io.req_addr=0x${Hexadecimal(io.req_paddr)} [${Hexadecimal(mshr_req_paddr)}] lob=${io.req_pc_lob(0)} idx=${idx}")
-      // printf(p"[${mshr_req_stride} - ${stride_buffer(idx)}] [${Hexadecimal(io.req_paddr(sbWidth-1, 0))} - ${Hexadecimal(paddr_lob_buffer(idx))}]\n")
-    }
-  }
 }
 
 /**
@@ -189,12 +160,6 @@ class StridePrefetcher(implicit edge: TLEdgeOut, p: Parameters, sbDepth: Int = 3
     cycle := cycle + 1.U
     val count_match = RegInit(0.U(32.W))
     val flag = RegInit(false.B)
-  if (true) {
-    when (io.req_val && !flag) {
-      printf(p"Start Cycle=${cycle}\n")
-      flag := true.B
-    }
-  }
 
   when (io.req_val && cacheable) {
     req_valid := true.B
@@ -204,33 +169,13 @@ class StridePrefetcher(implicit edge: TLEdgeOut, p: Parameters, sbDepth: Int = 3
     req_cmd   := Mux(ClientStates.hasWritePermission(io.req_coh.state), M_PFW, M_PFR)
   } .elsewhen (io.prefetch.fire) {
     req_valid := false.B
-    if (true) {
-      count_match := count_match + 1.U
-      printf(p"match: ${count_match}\n")
-    }
   }
 
-  // ! Debug prints
-  if (false) {
-    printf(p"Cycle: ${cycle}   VA:   0x${Hexadecimal(req_vaddr)}\n")
-    printf(p"Cycle: ${cycle}   PA:   0x${Hexadecimal(req_paddr)}\n")
-    printf(p"Cycle: ${cycle}   Data: 0x${Hexadecimal(req_data)}\n")
-  }
-  
 
   val addr_compare = req_vaddr(coreMaxAddrBits - 1, coreMaxAddrBits - M)
   val addr_filter  = req_vaddr(coreMaxAddrBits - M - 1, coreMaxAddrBits - M - N)
   val data_compare = req_data(coreMaxAddrBits - 1, coreMaxAddrBits - M)
   val data_filter  = req_data(coreMaxAddrBits - M - 1, coreMaxAddrBits - M - N)
-
-  // ! Debug prints
-  if (false) {
-    printf(p"Cycle: ${cycle}   A Comp: 0x${Hexadecimal(addr_compare)}\n")
-    printf(p"Cycle: ${cycle}   D Comp: 0x${Hexadecimal(data_compare)}\n")
-    printf(p"Cycle: ${cycle}   A Filt: 0x${Hexadecimal(addr_filter)}\n")
-    printf(p"Cycle: ${cycle}   D Filt: 0x${Hexadecimal(data_filter)}\n")
-  }
-  
 
   val all_ones = (1.U << N) - 1.U   // e.g., 15 for N=4 → 1111b
   val all_zeros = 0.U
@@ -252,16 +197,7 @@ class StridePrefetcher(implicit edge: TLEdgeOut, p: Parameters, sbDepth: Int = 3
     data_addr_match := false.B
   }
 
-
-
   io.prefetch.valid            := req_valid && io.mshr_avail && data_addr_match
-  // ! Debug prints
-  if (false) {
-    printf(p"Cycle: ${cycle}   Req valid: ${req_valid}\n")
-    printf(p"Cycle: ${cycle}   MSHR avail: ${io.mshr_avail}\n")
-    printf(p"Cycle: ${cycle}   Match: ${data_addr_match}\n")
-    printf(p"\n")
-  }
   io.prefetch.bits.paddr       := req_data // req_paddr
   io.prefetch.bits.vaddr       := DontCare
   io.prefetch.bits.uop         := NullMicroOp
